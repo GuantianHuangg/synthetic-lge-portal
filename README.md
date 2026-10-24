@@ -17,17 +17,25 @@ Official instructions: https://docs.github.com/en/pages/getting-started-with-git
 ## Demo behavior
 
 - The interface is English and visitors do not need an account.
-- DICOM inspection takes place locally in the browser; image files are not uploaded. This check is not anonymization or clinical quality control.
+- DICOM inspection takes place locally in the browser. At final review, the applicant explicitly authorizes email delivery of the three original DICOM files. This check and ZIP packaging do not anonymize files or perform clinical quality control.
 - Application records exist only in browser memory. Reloading resets them to examples. There is no administrator database.
 - QC decisions, agreements, model execution and output images are demonstrations. No trained model, real signature service or quantitative evaluation is connected.
-- Creating an application makes a real notification request to FormSubmit for `huanggt37@163.com`. Only an opaque demo reference, workflow event, timestamp and fixed demo notice are sent. Images, file names, DICOM metadata, typed aliases and signed documents are excluded.
-- FormSubmit acknowledgment is not proof of inbox delivery. A timeout leaves delivery unknown; retries may duplicate a message. The recipient has reported activating FormSubmit, but receipt from the future GitHub Pages origin still needs to be checked after deployment.
+- A local-file application packages `SAX.dcm`, `T1_mapping.dcm`, `LGE_reference.dcm`, and a manifest as one ZIP, preserving all original DICOM bytes. The complete ZIP must not exceed 10,000,000 bytes. Original filenames and typed aliases are omitted; identifiers inside the DICOM would still be transmitted.
+- Clicking **Submit & email DICOM ZIP** opens a standard FormSubmit multipart delivery in another tab to `huanggt37@163.com`. Complete any CAPTCHA or activation steps there. The original application stays in its tab. No separate notification-only email is generated for this submission.
+- Opening the delivery tab does not prove inbox receipt. If activation is required, activate and resend the ZIP: FormSubmit does not retain pending file uploads. A deliberate resend may produce a duplicate. The application offers a ZIP download for inspection or manual delivery.
+- Example applications have no files and retain the text-only notification flow. The recipient has confirmed receiving both local and online text notifications; attachment delivery must be verified separately.
 
 ## Network dependencies
 
 The website scripts, styles, DICOM parser and icons are included locally. Google Fonts was replaced with system fonts in this export. FormSubmit is the only external application request and remains necessary for email notifications. GitHub Pages and FormSubmit accessibility from mainland China has not been verified; changing the domain alone does not guarantee reliable access.
 
-GitHub Pages hosts static files. Real image reception, durable applications, model inference and signed PDFs require separate services if the project progresses beyond this demo. Do not place research images, participant records or server credentials in this repository.
+GitHub Pages hosts the static interface. FormSubmit handles the optional email attachment transfer; there is no image repository or administrator database. Durable applications, institutional private image storage, model inference and signed PDFs require separate services. Do not place research images, participant records or server credentials in this repository.
+
+Attachment transport reference: https://formsubmit.co/documentation (File uploads). Pending-upload limitation: https://formsubmit.co/help. The implementation preserves the service's default CAPTCHA protection.
+
+## Verification
+
+Run `node --test tests/*.test.mjs`. The tests check ZIP byte identity, CRC and directory structure, size rejection before file reads, and native multipart delivery using a mock DOM. Unit tests do not send email. Real attachment delivery must be checked with synthetic test data and recipient confirmation.
 
 ## Files
 
