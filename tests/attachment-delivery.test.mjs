@@ -4,7 +4,7 @@ import { createDicomArchive, MAX_ATTACHMENT_BYTES } from '../docs/attachments.js
 import { handoffDicomEmail } from '../docs/attachment-delivery.js';
 
 const metadata = {
-  reference: 'LGE-DEMO-12345678-1234-4234-8234-1234567890ab',
+  reference: 'LGE-12345678-1234-4234-8234-1234567890ab',
   createdAt: '2026-10-24T01:23:45.678Z',
 };
 const archive = await createDicomArchive({
@@ -12,7 +12,14 @@ const archive = await createDicomArchive({
   T1: new File([new Uint8Array([20, 0, 15])], 'private-original-t1.dcm'),
   LGE: new File([new Uint8Array([4, 8, 9, 0])], 'private-original-lge.dcm'),
 }, metadata);
-const input = () => ({ ...metadata, archive });
+const applicantDetails = {
+  applicantEmail: 'researcher@example.org',
+  project: 'External validation study',
+  sample: 'STUDY-001',
+  purpose: 'Paired external evaluation',
+  phase: 'Continuous 25-frame cine',
+};
+const input = () => ({ ...metadata, ...applicantDetails, archive });
 
 function browser({ blocked = false, submitThrows = false, openerThrows = false, assignmentThrows = false } = {}) {
   const opened = [], submitted = [], nodes = [];
@@ -46,6 +53,7 @@ function browser({ blocked = false, submitThrows = false, openerThrows = false, 
   }
   const windowImpl = {
     Blob, File, DataTransfer,
+    location: { href: 'https://guantianhuangg.github.io/synthetic-lge-portal/' },
     open(url, target) { opened.push({ url, target }); return blocked ? null : popup; },
   };
   return { documentImpl, windowImpl, opened, submitted, popup, nodes };
@@ -67,14 +75,23 @@ test('native multipart handoff contains one ZIP with identical binary bytes and 
   assert.equal(mock.popup.closed, false);
   const fields = Object.fromEntries(form.children.map(field => [field.name, field]));
   assert.deepEqual(Object.keys(fields).sort(), [
-    '_subject', '_template', 'notification_reference', 'event', 'created_at', 'notice', 'attachment',
+    '_subject', '_template', '_url', '_replyto', 'email', 'applicant_email', 'project', 'sample', 'purpose', 'phase',
+    'notification_reference', 'event', 'created_at', 'notice', 'attachment',
   ].sort());
   assert.equal(fields._subject.value, 'Synthetic LGE — Application with DICOM files');
   assert.equal(fields._template.value, 'table');
+  assert.equal(fields._url.value, 'https://guantianhuangg.github.io/synthetic-lge-portal/');
   assert.equal(fields.notification_reference.value, metadata.reference);
   assert.equal(fields.created_at.value, metadata.createdAt);
   assert.equal(fields.event.value, 'application_submitted');
+  assert.equal(fields._replyto.value, applicantDetails.applicantEmail);
+  assert.equal(fields.email.value, applicantDetails.applicantEmail);
+  assert.equal(fields.applicant_email.value, applicantDetails.applicantEmail);
+  for (const field of ['project', 'sample', 'purpose', 'phase']) {
+    assert.equal(fields[field].value, applicantDetails[field]);
+  }
   assert.match(fields.notice.value, /does not de-identify/);
+  assert.match(fields.notice.value, /manual review/);
   assert.equal(fields.attachment.type, 'file');
   assert.equal(fields.attachment.value, undefined, 'ZIP is not a JSON or base64 text field.');
   assert.equal(fields.attachment.files.length, 1);
@@ -83,6 +100,61 @@ test('native multipart handoff contains one ZIP with identical binary bytes and 
   assert.equal(file.type, 'application/zip');
   assert.equal(file.size, archive.bytes);
   assert.deepEqual(Buffer.from(await file.arrayBuffer()), Buffer.from(await archive.blob.arrayBuffer()));
+});
+
+test('only the canonical published portal may open the email service or upload files', () => {
+  for (const href of [
+    'http://127.0.0.1:4174/synthetic-lge-portal/',
+    'http://localhost:4174/synthetic-lge-portal/',
+    'https://synthetic-lge-research-portal.silly-elk-6696.chatgpt.site/',
+    'https://example.org/synthetic-lge-portal/',
+    'http://guantianhuangg.github.io/synthetic-lge-portal/',
+    'https://guantianhuangg.github.io/other-project/',
+    'https://guantianhuangg.github.io/synthetic-lge-portal/nested/',
+    'https://guantianhuangg.github.io/synthetic-lge-portal/nested/index.html',
+    'https://guantianhuangg.github.io/synthetic-lge-portal/index.html/',
+    'https://guantianhuangg.github.io/synthetic-lge-portal//',
+    'https://guantianhuangg.github.io.evil.example/synthetic-lge-portal/',
+    undefined,
+  ]) {
+    const mock = browser();
+    mock.windowImpl.location = { href };
+    const result = handoffDicomEmail(input(), mock);
+    assert.equal(result.status, 'failed');
+    assert.match(result.message, /preview/);
+    assert.equal(mock.opened.length, 0);
+    assert.equal(mock.submitted.length, 0);
+  }
+  for (const href of [
+    'https://guantianhuangg.github.io/synthetic-lge-portal/',
+    'https://guantianhuangg.github.io/synthetic-lge-portal',
+    'https://guantianhuangg.github.io/synthetic-lge-portal/?source=link#apply',
+    'https://guantianhuangg.github.io/synthetic-lge-portal/index.html',
+    'https://guantianhuangg.github.io/synthetic-lge-portal/index.html?source=link#apply',
+  ]) {
+    const mock = browser();
+    mock.windowImpl.location = { href };
+    assert.equal(handoffDicomEmail(input(), mock).status, 'handoff');
+    assert.equal(mock.submitted.length, 1);
+  }
+});
+
+test('missing or invalid applicant metadata cannot open a tab or POST an attachment', () => {
+  const invalidFields = [
+    ['applicantEmail', undefined], ['applicantEmail', ''], ['applicantEmail', 'not-an-email'],
+    ['applicantEmail', 'valid@example.org\r\nBcc:someone@example.org'],
+    ['applicantEmail', 'valid@example.org\n'], ['applicantEmail', 'a@example.org,b@example.org'],
+    ['applicantEmail', 'a@-example.org'], ['applicantEmail', '.a@example.org'],
+    ['project', ''], ['sample', undefined], ['purpose', ''], ['phase', ''],
+    ['project', 'P'.repeat(121)], ['sample', 'S'.repeat(81)], ['phase', 'P'.repeat(121)],
+    ['purpose', 'P'.repeat(2001)], ['sample', 'ANON\u0000ID'],
+  ];
+  for (const [field, value] of invalidFields) {
+    const mock = browser();
+    assert.equal(handoffDicomEmail({ ...input(), [field]: value }, mock).status, 'failed');
+    assert.equal(mock.opened.length, 0, `Invalid ${field} must not open a tab.`);
+    assert.equal(mock.submitted.length, 0, `Invalid ${field} must not submit.`);
+  }
 });
 
 test('invalid references, dates, archives, filenames and size limits never open a tab or post', () => {

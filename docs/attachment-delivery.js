@@ -1,10 +1,12 @@
-import { buildNotification } from './email.js';
-import { MAX_ATTACHMENT_BYTES } from './attachments.js';
+import { buildNotification, EMAIL_FORM_URL } from './email.js?v=20261024-public';
+import { MAX_ATTACHMENT_BYTES } from './attachments.js?v=20261024-public';
 
 const ENDPOINT = 'https://formsubmit.co/huanggt37@163.com';
 const ENTRY_NAMES = ['SAX.dcm', 'T1_mapping.dcm', 'LGE_reference.dcm', 'manifest.json'];
 const MESSAGES = Object.freeze({
-  handoff: 'The DICOM email submission opened in a separate tab. Complete any FormSubmit verification or recipient activation there. Inbox and attachment delivery are not confirmed; do not resend unless needed.',
+  handoff: 'Your application and DICOM ZIP opened in a separate FormSubmit tab. Complete any verification there. The research team will review received applications and reply to your email. Inbox and attachment delivery are not confirmed; do not resend unless needed.',
+  invalidDetails: 'Enter a valid applicant email, project, study sample ID, research purpose, and SAX phase before submitting. No upload was started.',
+  previewOnly: 'This is a preview of the application form. Submit from the official research portal at https://guantianhuangg.github.io/synthetic-lge-portal/. No upload was started.',
   invalid: 'The prepared DICOM attachment is invalid or exceeds the 10 MB email limit. No upload was started.',
   unsupported: 'This browser could not prepare a file attachment for email. No upload was started. Use a current browser and prepare the package again.',
   blocked: 'The email submission tab could not be opened. Allow pop-ups for this site, then try again. No upload was started.',
@@ -13,6 +15,19 @@ const MESSAGES = Object.freeze({
 let handoffSequence = 0;
 
 function failure(message) { return { status: 'failed', message }; }
+
+function isPublishedPortal(location) {
+  try {
+    const canonical = new URL(EMAIL_FORM_URL);
+    const actual = new URL(location?.href);
+    const canonicalPath = canonical.pathname.replace(/\/$/, '');
+    return actual.origin === canonical.origin
+      && (actual.pathname.replace(/\/$/, '') === canonicalPath
+        || actual.pathname === `${canonicalPath}/index.html`);
+  } catch {
+    return false;
+  }
+}
 
 function validArchive(archive, reference, BlobImpl) {
   return typeof BlobImpl === 'function' && archive?.blob instanceof BlobImpl
@@ -34,18 +49,24 @@ export function handoffDicomEmail(input, {
   documentImpl = globalThis.document,
   windowImpl = globalThis.window,
 } = {}) {
+  if (!isPublishedPortal(windowImpl?.location)) return failure(MESSAGES.previewOnly);
   let metadata;
   try {
     metadata = buildNotification({
       reference: input?.reference,
       event: 'application_submitted',
       createdAt: input?.createdAt,
+      applicantEmail: input?.applicantEmail,
+      project: input?.project,
+      sample: input?.sample,
+      purpose: input?.purpose,
+      phase: input?.phase,
     });
     if (!validArchive(input?.archive, input.reference, windowImpl?.Blob)) {
       return failure(MESSAGES.invalid);
     }
   } catch {
-    return failure(MESSAGES.invalid);
+    return failure(MESSAGES.invalidDetails);
   }
 
   if (!documentImpl?.body || typeof documentImpl.createElement !== 'function'
@@ -62,12 +83,9 @@ export function handoffDicomEmail(input, {
     form.enctype = 'multipart/form-data';
     form.style.display = 'none';
     const fields = {
+      ...metadata,
       _subject: 'Synthetic LGE — Application with DICOM files',
-      _template: 'table',
-      notification_reference: metadata.notification_reference,
-      event: metadata.event,
-      created_at: metadata.created_at,
-      notice: 'Contains the three original, user-selected SAX, T1 mapping, and reference LGE DICOM files in one ZIP. Research demonstration only; no model inference or clinical interpretation occurred. The portal does not de-identify these files.',
+      notice: 'External research application for manual review and a reply to the applicant email. Contains the three original, user-selected SAX, T1 mapping, and reference LGE DICOM files in one ZIP. The portal does not de-identify these files. Submission does not imply approval or automatic model generation.',
     };
     for (const [name, value] of Object.entries(fields)) {
       const field = documentImpl.createElement('input');

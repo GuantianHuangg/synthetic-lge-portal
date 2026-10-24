@@ -11,7 +11,7 @@ const ROLES = Object.freeze([
   { role: 'T1', name: 'T1_mapping.dcm' },
   { role: 'LGE', name: 'LGE_reference.dcm' },
 ]);
-const REFERENCE_PATTERN = /^LGE-DEMO-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const REFERENCE_PATTERN = /^LGE-(?:DEMO-)?[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const encoder = new TextEncoder();
 const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, number) => {
   let value = number;
@@ -76,7 +76,7 @@ export async function createDicomArchive(filesByRole, metadata) {
   exactObject(metadata, ['reference', 'createdAt'], 'Archive metadata');
   const { reference, createdAt } = metadata;
   if (typeof reference !== 'string' || !REFERENCE_PATTERN.test(reference)) {
-    throw new TypeError('A generated demo notification reference is required.');
+    throw new TypeError('A generated application reference is required.');
   }
   if (typeof createdAt !== 'string'
       || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(createdAt)
